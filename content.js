@@ -10,20 +10,13 @@
   const TOAST_TIMEOUT_MS = 3200;
   const THEME_POLL_MS = 1000;
   const TARGET_FLASH_MS = 1250;
-  const CONTEXT_RELOAD_FLAG = "groktrue-context-reload";
+  const COMPOSER_TIMEOUT_MS = 6000;
+  const SUBMIT_TIMEOUT_MS = 6000;
 
   const state = {
-    theme: "dark",
-    auth: {
-      loading: true,
-      connected: false,
-      configured: false,
-      profile: null,
-      method: ""
-    }
+    theme: "dark"
   };
 
-  let activeContext = null;
   let isSending = false;
   let toastTimer = 0;
   let themeTimer = 0;
@@ -33,27 +26,11 @@
 
   void init();
 
-  async function init() {
+  function init() {
     installThemeObserver();
-    window.addEventListener("keydown", handleKeydown);
-    document.addEventListener("pointerdown", handleDocumentPointerDown, true);
-    window.addEventListener("scroll", handleViewportChange, { passive: true });
-    window.addEventListener("resize", handleViewportChange);
     ui.mainButton.addEventListener("click", handleMainButton);
-    ui.settingsToggle.addEventListener("click", toggleSettings);
-    ui.cancelButton.addEventListener("click", closeModal);
-    ui.closeButton.addEventListener("click", closeModal);
-    ui.backdrop.addEventListener("click", handleBackdropClick);
-    ui.sendButton.addEventListener("click", handleModalSend);
-    ui.authConnectButton.addEventListener("click", handleAuthConnect);
-    ui.settingsSaveButton.addEventListener("click", handleSettingsSave);
-    ui.logoutButton.addEventListener("click", handleLogout);
-
-    ui.preview.textContent = REPLY_TEXT;
-    ui.authStatus.textContent = "Checking X connection…";
     syncTheme();
     themeTimer = window.setInterval(syncTheme, THEME_POLL_MS);
-    await refreshAuthState();
   }
 
   function createUi() {
@@ -62,90 +39,14 @@
     const root = document.createElement("div");
     root.id = ROOT_ID;
     root.className = "groktrue-root";
-    root.dataset.auth = "loading";
     root.innerHTML = `
       <div class="groktrue-dock">
-        <div class="groktrue-auth-card">
-          <p class="groktrue-auth-kicker">Connect X</p>
-          <h2 class="groktrue-auth-title">Connect X API</h2>
-          <p class="groktrue-auth-copy">Paste your OAuth 1.0a keys to connect this browser profile and send replies through the X API.</p>
-          <label class="groktrue-field">
-            <span class="groktrue-field-label">Consumer Key</span>
-            <input class="groktrue-client-id-input groktrue-oauth1-consumer-key" type="password" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="groktrue-field">
-            <span class="groktrue-field-label">Consumer Secret</span>
-            <input class="groktrue-client-id-input groktrue-oauth1-consumer-secret" type="password" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="groktrue-field">
-            <span class="groktrue-field-label">Access Token</span>
-            <input class="groktrue-client-id-input groktrue-oauth1-access-token" type="password" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="groktrue-field">
-            <span class="groktrue-field-label">Access Token Secret</span>
-            <input class="groktrue-client-id-input groktrue-oauth1-access-token-secret" type="password" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="groktrue-field">
-            <span class="groktrue-field-label">Screen Name (Optional)</span>
-            <input class="groktrue-client-id-input groktrue-oauth1-screen-name" type="text" autocomplete="off" spellcheck="false" placeholder="@yourhandle" />
-          </label>
-          <p class="groktrue-auth-status" role="status" aria-live="polite"></p>
-          <div class="groktrue-auth-actions">
-            <button class="groktrue-auth-button" type="button">Save Keys</button>
-          </div>
-        </div>
-        <div class="groktrue-launcher">
-          <button class="groktrue-main-button" type="button" aria-label="Reply with Grok">
-            <span class="groktrue-icon-frame">
-              <img class="groktrue-icon" src="${chrome.runtime.getURL("assets/button-icon.png")}" alt="" />
-            </span>
-            <span class="groktrue-button-copy">ASK GROK</span>
-          </button>
-          <button class="groktrue-settings-toggle" type="button" aria-label="Open settings">⚙</button>
-          <div class="groktrue-settings-popover" aria-hidden="true">
-            <p class="groktrue-settings-label">X account</p>
-            <div class="groktrue-account-panel">
-              <p class="groktrue-account-handle">Not connected</p>
-              <button class="groktrue-logout-button" type="button">Disconnect</button>
-            </div>
-            <p class="groktrue-settings-label">Local API Keys</p>
-            <p class="groktrue-settings-copy">Re-enter all four secret fields to replace the keys stored locally in this browser.</p>
-            <label class="groktrue-field">
-              <span class="groktrue-field-label">Consumer Key</span>
-              <input class="groktrue-client-id-input groktrue-settings-oauth1-consumer-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste to replace" />
-            </label>
-            <label class="groktrue-field">
-              <span class="groktrue-field-label">Consumer Secret</span>
-              <input class="groktrue-client-id-input groktrue-settings-oauth1-consumer-secret" type="password" autocomplete="off" spellcheck="false" placeholder="Paste to replace" />
-            </label>
-            <label class="groktrue-field">
-              <span class="groktrue-field-label">Access Token</span>
-              <input class="groktrue-client-id-input groktrue-settings-oauth1-access-token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste to replace" />
-            </label>
-            <label class="groktrue-field">
-              <span class="groktrue-field-label">Access Token Secret</span>
-              <input class="groktrue-client-id-input groktrue-settings-oauth1-access-token-secret" type="password" autocomplete="off" spellcheck="false" placeholder="Paste to replace" />
-            </label>
-            <label class="groktrue-field">
-              <span class="groktrue-field-label">Screen Name (Optional)</span>
-              <input class="groktrue-client-id-input groktrue-settings-oauth1-screen-name" type="text" autocomplete="off" spellcheck="false" placeholder="@yourhandle" />
-            </label>
-            <button class="groktrue-auth-button groktrue-settings-save" type="button">Save Keys</button>
-          </div>
-        </div>
-      </div>
-      <div class="groktrue-backdrop"></div>
-      <div class="groktrue-modal" role="dialog" aria-modal="true" aria-labelledby="groktrue-title">
-        <div class="groktrue-modal-header">
-          <h2 id="groktrue-title">Ask Grok</h2>
-          <button class="groktrue-close" type="button" aria-label="Close confirm popup">×</button>
-        </div>
-        <pre class="groktrue-preview"></pre>
-        <p class="groktrue-status" role="status" aria-live="polite"></p>
-        <div class="groktrue-actions">
-          <button class="groktrue-secondary" type="button">Cancel</button>
-          <button class="groktrue-primary" type="button">Send</button>
-        </div>
+        <button class="groktrue-main-button" type="button" aria-label="Reply with Grok">
+          <span class="groktrue-icon-frame">
+            <img class="groktrue-icon" src="${chrome.runtime.getURL("assets/button-icon.png")}" alt="" />
+          </span>
+          <span class="groktrue-button-copy">ASK GROK</span>
+        </button>
       </div>
       <div class="groktrue-toast" aria-live="polite"></div>
     `;
@@ -154,450 +55,152 @@
 
     return {
       root,
-      authCard: root.querySelector(".groktrue-auth-card"),
-      authStatus: root.querySelector(".groktrue-auth-status"),
-      authConnectButton: root.querySelector(".groktrue-auth-button"),
-      oauth1ConsumerKeyInput: root.querySelector(".groktrue-oauth1-consumer-key"),
-      oauth1ConsumerSecretInput: root.querySelector(".groktrue-oauth1-consumer-secret"),
-      oauth1AccessTokenInput: root.querySelector(".groktrue-oauth1-access-token"),
-      oauth1AccessTokenSecretInput: root.querySelector(".groktrue-oauth1-access-token-secret"),
-      oauth1ScreenNameInput: root.querySelector(".groktrue-oauth1-screen-name"),
       mainButton: root.querySelector(".groktrue-main-button"),
-      settingsToggle: root.querySelector(".groktrue-settings-toggle"),
-      settingsPopover: root.querySelector(".groktrue-settings-popover"),
-      settingsOauth1ConsumerKeyInput: root.querySelector(".groktrue-settings-oauth1-consumer-key"),
-      settingsOauth1ConsumerSecretInput: root.querySelector(".groktrue-settings-oauth1-consumer-secret"),
-      settingsOauth1AccessTokenInput: root.querySelector(".groktrue-settings-oauth1-access-token"),
-      settingsOauth1AccessTokenSecretInput: root.querySelector(".groktrue-settings-oauth1-access-token-secret"),
-      settingsOauth1ScreenNameInput: root.querySelector(".groktrue-settings-oauth1-screen-name"),
-      settingsSaveButton: root.querySelector(".groktrue-settings-save"),
-      accountHandle: root.querySelector(".groktrue-account-handle"),
-      logoutButton: root.querySelector(".groktrue-logout-button"),
-      backdrop: root.querySelector(".groktrue-backdrop"),
-      modal: root.querySelector(".groktrue-modal"),
-      closeButton: root.querySelector(".groktrue-close"),
-      preview: root.querySelector(".groktrue-preview"),
-      status: root.querySelector(".groktrue-status"),
-      cancelButton: root.querySelector(".groktrue-secondary"),
-      sendButton: root.querySelector(".groktrue-primary"),
       toast: root.querySelector(".groktrue-toast")
     };
   }
 
-  async function refreshAuthState(statusMessage = "") {
-    state.auth.loading = true;
-    applyAuthState(statusMessage || "Checking X connection…");
-
-    try {
-      const response = await sendRuntimeMessage({ type: "X_AUTH_STATUS" });
-      if (!response?.ok) {
-        throw new Error(response?.message || "Could not read X auth status.");
-      }
-
-      applyAuthResponse(response);
-      applyAuthState(statusMessage);
-    } catch (error) {
-      state.auth.loading = false;
-      state.auth.connected = false;
-      state.auth.configured = false;
-      state.auth.profile = null;
-      state.auth.method = "";
-      applyAuthState(error instanceof Error ? error.message : "Could not load X auth.");
-    }
-  }
-
-  function applyAuthState(statusMessage = "") {
-    ui.root.dataset.auth = state.auth.loading
-      ? "loading"
-      : state.auth.connected
-        ? "connected"
-        : "disconnected";
-
-    if (!state.auth.connected) {
-      activeContext = null;
-      setStatus("");
-      closeSettings();
-    }
-    ui.authConnectButton.disabled = state.auth.loading || isSending;
-    ui.settingsToggle.disabled = state.auth.loading || isSending;
-    ui.mainButton.disabled = state.auth.loading || isSending;
-    ui.logoutButton.disabled = state.auth.loading || isSending || !state.auth.connected;
-    ui.oauth1ConsumerKeyInput.disabled = state.auth.loading || isSending;
-    ui.oauth1ConsumerSecretInput.disabled = state.auth.loading || isSending;
-    ui.oauth1AccessTokenInput.disabled = state.auth.loading || isSending;
-    ui.oauth1AccessTokenSecretInput.disabled = state.auth.loading || isSending;
-    ui.oauth1ScreenNameInput.disabled = state.auth.loading || isSending;
-    ui.settingsOauth1ConsumerKeyInput.disabled = state.auth.loading || isSending;
-    ui.settingsOauth1ConsumerSecretInput.disabled = state.auth.loading || isSending;
-    ui.settingsOauth1AccessTokenInput.disabled = state.auth.loading || isSending;
-    ui.settingsOauth1AccessTokenSecretInput.disabled = state.auth.loading || isSending;
-    ui.settingsOauth1ScreenNameInput.disabled = state.auth.loading || isSending;
-    ui.settingsSaveButton.disabled = state.auth.loading || isSending;
-
-    if (state.auth.loading) {
-      ui.authStatus.textContent = statusMessage || "Checking X connection…";
-    } else if (state.auth.connected) {
-      const accountLabel = getAccountLabel();
-      ui.authStatus.textContent = statusMessage || `Connected as ${accountLabel}.`;
-      ui.accountHandle.textContent = accountLabel;
-    } else if (!state.auth.configured) {
-      ui.authStatus.textContent = statusMessage || "Enter your local OAuth 1.0a keys to connect.";
-      ui.accountHandle.textContent = "Not connected";
-    } else {
-      ui.authStatus.textContent = statusMessage || "Paste your local OAuth 1.0a keys above to connect.";
-      ui.accountHandle.textContent = "Not connected";
-    }
-  }
-
-  async function handleAuthConnect(event) {
-    event.preventDefault();
-
-    const oauth1Payload = readOauth1Payload("auth");
-    const oauth1FilledCount = countFilledOauth1Fields(oauth1Payload);
-    if (oauth1FilledCount > 0) {
-      if (oauth1FilledCount < 4) {
-        applyAuthState("Fill consumer key, consumer secret, access token, and access token secret.");
-        return;
-      }
-
-      state.auth.loading = true;
-      applyAuthState("Saving local OAuth 1.0a keys…");
-
-      try {
-        const response = await sendRuntimeMessage({
-          type: "X_AUTH_SAVE_OAUTH1",
-          payload: oauth1Payload
-        });
-
-        if (!response?.ok) {
-          throw new Error(response?.message || "Could not save local X API keys.");
-        }
-
-        applyAuthResponse(response);
-        clearOauth1Inputs("auth");
-        applyAuthState();
-        showToast(`Connected as ${getAccountLabel()}.`);
-      } catch (error) {
-        state.auth.loading = false;
-        applyAuthState(error instanceof Error ? error.message : "Could not save local X API keys.");
-      }
-      return;
-    }
-
-    applyAuthState("Enter your X API keys to connect.");
-  }
-
-  async function handleSettingsSave(event) {
+  async function handleMainButton(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    const oauth1Payload = readOauth1Payload("settings");
-    const oauth1FilledCount = countFilledOauth1Fields(oauth1Payload);
-    if (oauth1FilledCount < 4) {
-      showToast("Re-enter all four secret fields to replace the saved keys.", "error");
-      return;
-    }
-
-    state.auth.loading = true;
-    applyAuthState("Saving local OAuth 1.0a keys…");
-
-    try {
-      const response = await sendRuntimeMessage({
-        type: "X_AUTH_SAVE_OAUTH1",
-        payload: oauth1Payload
-      });
-
-      if (!response?.ok) {
-        throw new Error(response?.message || "Could not save local X API keys.");
-      }
-
-      applyAuthResponse(response);
-      clearOauth1Inputs("settings");
-      applyAuthState();
-      showToast(`Saved keys for ${getAccountLabel()}.`);
-    } catch (error) {
-      state.auth.loading = false;
-      applyAuthState();
-      showToast(error instanceof Error ? error.message : "Could not save local X API keys.", "error");
-    }
-  }
-
-  async function handleLogout(event) {
-    event.preventDefault();
-    closeSettings();
-
-    try {
-      const response = await sendRuntimeMessage({ type: "X_AUTH_LOGOUT" });
-      if (!response?.ok) {
-        throw new Error(response?.message || "Could not disconnect X.");
-      }
-
-      await refreshAuthState("Disconnected from X.");
-      showToast("Disconnected from X.");
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Could not disconnect X.", "error");
-    }
-  }
-
-  function handleMainButton(event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (isSending || !state.auth.connected) {
-      return;
-    }
-
-    closeSettings();
-
-    const context = getCenteredTweetContext();
-    if (!context) {
-      showToast("No target tweet is available right now.", "error");
-      return;
-    }
-
-    flashTarget(context.article);
-    void performSend(context, { fastSend: true });
-  }
-
-  async function handleModalSend() {
-    const context = activeContext;
-    if (!context) {
-      setStatus("No target tweet is available right now.", "error");
-      return;
-    }
-
-    flashTarget(context.article);
-    await performSend(context, { fastSend: false });
-  }
-
-  function handleDocumentPointerDown(event) {
-    if (ui.root.classList.contains("groktrue-settings-open")) {
-      const insideLauncher = event.target instanceof Element && event.target.closest(".groktrue-launcher");
-      if (!insideLauncher) {
-        closeSettings();
-      }
-    }
-  }
-
-  function handleViewportChange() {
-    if (ui.root.classList.contains("groktrue-settings-open")) {
-      closeSettings();
-    }
-  }
-
-  function handleKeydown(event) {
-    if (event.key !== "Escape" || isSending) {
-      return;
-    }
-
-    if (ui.root.classList.contains("groktrue-settings-open")) {
-      closeSettings();
-      return;
-    }
-
-    if (ui.root.classList.contains("groktrue-modal-open")) {
-      closeModal();
-    }
-  }
-
-  function toggleSettings(event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (!state.auth.connected) {
-      return;
-    }
-
-    ui.root.classList.toggle("groktrue-settings-open");
-    ui.settingsPopover.setAttribute(
-      "aria-hidden",
-      String(!ui.root.classList.contains("groktrue-settings-open"))
-    );
-  }
-
-  function closeSettings() {
-    ui.root.classList.remove("groktrue-settings-open");
-    ui.settingsPopover.setAttribute("aria-hidden", "true");
-  }
-
-  function handleBackdropClick() {
-    closeModal();
-  }
-
-  function closeModal() {
     if (isSending) {
       return;
     }
 
-    activeContext = null;
-    setStatus("");
-    ui.root.classList.remove("groktrue-modal-open");
+    const context = getCenteredTweetContext();
+    if (!context) {
+      showToast("No target post is available right now.", "error");
+      return;
+    }
+
+    flashTarget(context.article);
+    setBusy(true);
+    showToast("Replying…");
+
+    try {
+      await sendReplyViaNativeUi(context);
+      showToast("Reply sent.");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Reply failed.", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function setBusy(nextBusy) {
     isSending = nextBusy;
     ui.root.classList.toggle("groktrue-busy", nextBusy);
-    ui.mainButton.disabled = nextBusy || !state.auth.connected || state.auth.loading;
-    ui.settingsToggle.disabled = nextBusy || !state.auth.connected || state.auth.loading;
-    ui.cancelButton.disabled = nextBusy;
-    ui.sendButton.disabled = nextBusy;
-    ui.closeButton.disabled = nextBusy;
-    ui.authConnectButton.disabled = nextBusy || state.auth.loading;
-    ui.oauth1ConsumerKeyInput.disabled = nextBusy || state.auth.loading;
-    ui.oauth1ConsumerSecretInput.disabled = nextBusy || state.auth.loading;
-    ui.oauth1AccessTokenInput.disabled = nextBusy || state.auth.loading;
-    ui.oauth1AccessTokenSecretInput.disabled = nextBusy || state.auth.loading;
-    ui.oauth1ScreenNameInput.disabled = nextBusy || state.auth.loading;
-    ui.settingsOauth1ConsumerKeyInput.disabled = nextBusy || state.auth.loading;
-    ui.settingsOauth1ConsumerSecretInput.disabled = nextBusy || state.auth.loading;
-    ui.settingsOauth1AccessTokenInput.disabled = nextBusy || state.auth.loading;
-    ui.settingsOauth1AccessTokenSecretInput.disabled = nextBusy || state.auth.loading;
-    ui.settingsOauth1ScreenNameInput.disabled = nextBusy || state.auth.loading;
-    ui.settingsSaveButton.disabled = nextBusy || state.auth.loading;
-    ui.logoutButton.disabled = nextBusy || state.auth.loading || !state.auth.connected;
-    ui.modal.setAttribute("aria-busy", String(nextBusy));
+    ui.mainButton.disabled = nextBusy;
   }
 
-  function applyAuthResponse(response) {
-    state.auth.loading = false;
-    state.auth.connected = Boolean(response?.connected);
-    state.auth.configured = Boolean(response?.configured);
-    state.auth.profile = response?.profile || null;
-    state.auth.method = typeof response?.authMethod === "string" ? response.authMethod : "";
+  async function sendReplyViaNativeUi(context) {
+    const replyButton = context.replyButton || findReplyButton(context.article);
+    if (!replyButton) {
+      throw new Error("Could not find X's reply button for that post.");
+    }
+
+    const previousContainers = new Set(getComposerCandidates().map((candidate) => candidate.container));
+    clickElement(replyButton);
+
+    const composer = await waitForReplyComposer(previousContainers);
+    const textbox = composer.textbox;
+
+    const inserted = await replaceComposerText(textbox, REPLY_TEXT);
+    if (!inserted) {
+      throw new Error("Could not fill X's reply box.");
+    }
+
+    const readySubmitButton = await waitForEnabledSubmitButton(composer.container);
+    clickElement(readySubmitButton);
+    await waitForSubmitResult(composer.container, textbox);
   }
 
-  function getAccountLabel() {
-    if (state.auth.profile?.username) {
-      return `@${state.auth.profile.username}`;
-    }
-
-    if (state.auth.profile?.name) {
-      return state.auth.profile.name;
-    }
-
-    if (state.auth.profile?.id) {
-      return "your X account";
-    }
-
-    if (state.auth.method === "oauth1") {
-      return "local OAuth 1.0a keys";
-    }
-
-    return "X connected";
-  }
-
-  function readOauth1Payload(source = "auth") {
-    const isSettings = source === "settings";
-    return {
-      consumerKey: (isSettings ? ui.settingsOauth1ConsumerKeyInput : ui.oauth1ConsumerKeyInput).value.trim(),
-      consumerSecret: (isSettings ? ui.settingsOauth1ConsumerSecretInput : ui.oauth1ConsumerSecretInput).value.trim(),
-      accessToken: (isSettings ? ui.settingsOauth1AccessTokenInput : ui.oauth1AccessTokenInput).value.trim(),
-      accessTokenSecret: (isSettings ? ui.settingsOauth1AccessTokenSecretInput : ui.oauth1AccessTokenSecretInput).value.trim(),
-      screenName: (isSettings ? ui.settingsOauth1ScreenNameInput : ui.oauth1ScreenNameInput).value.trim()
-    };
-  }
-
-  function clearOauth1Inputs(source = "auth") {
-    const isSettings = source === "settings";
-    const fields = isSettings
-      ? [
-          ui.settingsOauth1ConsumerKeyInput,
-          ui.settingsOauth1ConsumerSecretInput,
-          ui.settingsOauth1AccessTokenInput,
-          ui.settingsOauth1AccessTokenSecretInput,
-          ui.settingsOauth1ScreenNameInput
-        ]
-      : [
-          ui.oauth1ConsumerKeyInput,
-          ui.oauth1ConsumerSecretInput,
-          ui.oauth1AccessTokenInput,
-          ui.oauth1AccessTokenSecretInput,
-          ui.oauth1ScreenNameInput
-        ];
-
-    for (const field of fields) {
-      field.value = "";
-    }
-  }
-
-  function countFilledOauth1Fields(payload) {
-    return [
-      payload.consumerKey,
-      payload.consumerSecret,
-      payload.accessToken,
-      payload.accessTokenSecret
-    ].filter(Boolean).length;
-  }
-
-  function setStatus(message, type = "") {
-    ui.status.textContent = message;
-    ui.status.dataset.state = type;
-  }
-
-  function showToast(message, type = "") {
-    window.clearTimeout(toastTimer);
-    ui.toast.textContent = message;
-    ui.toast.dataset.state = type;
-    ui.toast.classList.add("groktrue-toast-visible");
-
-    toastTimer = window.setTimeout(() => {
-      ui.toast.classList.remove("groktrue-toast-visible");
-    }, TOAST_TIMEOUT_MS);
-  }
-
-  async function performSend(context, { fastSend }) {
-    if (isSending) {
-      return;
-    }
-
-    if (!state.auth.connected) {
-      showToast("Connect X before sending replies.", "error");
-      await refreshAuthState("Connect X before sending replies.");
-      return;
-    }
-
-    setBusy(true);
-    closeSettings();
-
-    if (fastSend) {
-      showToast("Fast: replying now…");
-    } else {
-      setStatus("Sending reply through the X API…");
-    }
-
+  async function waitForReplyComposer(previousContainers) {
     try {
-      const response = await sendRuntimeMessage({
-        type: "X_REPLY_TO_TWEET",
-        payload: {
-          tweetId: context.tweetId,
-          text: REPLY_TEXT
-        }
-      });
-
-      if (!response?.ok) {
-        throw new Error(response?.message || "Reply failed.");
-      }
-
-      if (!fastSend) {
-        ui.root.classList.remove("groktrue-modal-open");
-      }
-
-      activeContext = null;
-      showToast(fastSend ? "Fast reply sent." : "Reply sent.");
+      return await waitFor(
+        () => {
+          const freshCandidate = getComposerCandidates().find(
+            (candidate) => !previousContainers.has(candidate.container)
+          );
+          return freshCandidate || null;
+        },
+        COMPOSER_TIMEOUT_MS / 2,
+        "X did not open the reply composer in time."
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Reply failed.";
-      if (fastSend) {
-        showToast(message, "error");
-      } else {
-        setStatus(message, "error");
+      return waitFor(
+        () => getComposerCandidates()[0] || null,
+        COMPOSER_TIMEOUT_MS / 2,
+        "X did not open the reply composer in time."
+      );
+    }
+  }
+
+  async function replaceComposerText(textbox, text) {
+    focusEditable(textbox);
+    await sleep(50);
+
+    selectAllEditable(textbox);
+
+    let inserted = false;
+    try {
+      inserted = document.execCommand("insertText", false, text);
+    } catch (error) {
+      inserted = false;
+    }
+
+    if (!inserted || !composerContainsText(textbox, text)) {
+      textbox.textContent = text;
+      textbox.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          cancelable: true,
+          data: text,
+          inputType: "insertText"
+        })
+      );
+    }
+
+    if (!composerContainsText(textbox, text)) {
+      return false;
+    }
+
+    await sleep(120);
+    return composerContainsText(textbox, text);
+  }
+
+  async function waitForEnabledSubmitButton(container) {
+    return waitFor(() => {
+      const button = findComposerSubmitButton(container);
+      return button && !isDisabled(button) ? button : null;
+    }, COMPOSER_TIMEOUT_MS, "X did not enable the Reply button.");
+  }
+
+  async function waitForSubmitResult(container, textbox) {
+    await sleep(250);
+
+    await waitFor(() => {
+      const alertText = getVisibleAlertText();
+      if (alertText) {
+        throw new Error(alertText);
       }
 
-      if (/connect|session expired|client id|unauthorized|rejected the authenticated user lookup/i.test(message)) {
-        await refreshAuthState(message);
+      if (!document.contains(container) || !document.contains(textbox)) {
+        return true;
       }
-    } finally {
-      setBusy(false);
-    }
+
+      if (!isVisible(textbox)) {
+        return true;
+      }
+
+      const currentText = normalizeSpace(textbox.innerText || textbox.textContent || "");
+      if (!currentText) {
+        return true;
+      }
+
+      return null;
+    }, SUBMIT_TIMEOUT_MS, "X did not finish sending the reply.");
   }
 
   function getCenteredTweetContext() {
@@ -625,32 +228,7 @@
       }
     }
 
-    if (!best) {
-      return null;
-    }
-
-    return {
-      article: best.article,
-      tweetPath: best.tweetPath,
-      tweetId: best.tweetId
-    };
-  }
-
-  function flashTarget(article) {
-    if (!article) {
-      return;
-    }
-
-    window.clearTimeout(highlightTimer);
-    document.querySelector(".groktrue-targeted-article")?.classList.remove("groktrue-targeted-article");
-    article.classList.add("groktrue-targeted-article");
-    highlightTimer = window.setTimeout(() => {
-      article.classList.remove("groktrue-targeted-article");
-    }, TARGET_FLASH_MS);
-  }
-
-  function findReplyButton(article) {
-    return article.querySelector("[data-testid='reply']");
+    return best || null;
   }
 
   function getDiscoveredTweetContexts() {
@@ -676,6 +254,7 @@
 
     return {
       article,
+      replyButton,
       tweetPath,
       tweetId
     };
@@ -683,7 +262,6 @@
 
   function getTweetPath(article) {
     const statusLink = getPreferredStatusLink(article);
-
     if (!statusLink) {
       return "";
     }
@@ -713,6 +291,193 @@
   function getTweetIdFromPath(tweetPath) {
     const match = tweetPath.match(/\/status\/(\d+)/);
     return match ? match[1] : "";
+  }
+
+  function findReplyButton(article) {
+    return article.querySelector("[data-testid='reply']");
+  }
+
+  function getComposerCandidates() {
+    const candidates = [];
+    const seenContainers = new Set();
+
+    for (const dialog of document.querySelectorAll("[role='dialog']")) {
+      const candidate = buildComposerCandidate(dialog);
+      if (candidate && !seenContainers.has(candidate.container)) {
+        seenContainers.add(candidate.container);
+        candidates.push(candidate);
+      }
+    }
+
+    for (const textbox of document.querySelectorAll("[data-testid='tweetTextarea_0'], [role='textbox'][data-testid^='tweetTextarea_']")) {
+      if (!isVisible(textbox)) {
+        continue;
+      }
+
+      const container =
+        textbox.closest("[role='dialog'], form, [data-testid='cellInnerDiv'], main") || textbox.parentElement;
+      const candidate = buildComposerCandidate(container);
+      if (candidate && !seenContainers.has(candidate.container)) {
+        seenContainers.add(candidate.container);
+        candidates.push(candidate);
+      }
+    }
+
+    return candidates;
+  }
+
+  function buildComposerCandidate(container) {
+    if (!(container instanceof Element) || !isVisible(container)) {
+      return null;
+    }
+
+    const textbox = Array.from(
+      container.querySelectorAll("[data-testid='tweetTextarea_0'], [role='textbox'][data-testid^='tweetTextarea_']")
+    ).find((element) => isVisible(element));
+
+    if (!textbox) {
+      return null;
+    }
+
+    return {
+      container,
+      textbox
+    };
+  }
+
+  function findComposerSubmitButton(container) {
+    if (!(container instanceof Element)) {
+      return null;
+    }
+
+    const nodes = Array.from(
+      container.querySelectorAll("[data-testid='tweetButton'], [data-testid='tweetButtonInline']")
+    );
+
+    for (const node of nodes) {
+      const clickable = node.matches("button, [role='button']")
+        ? node
+        : node.querySelector("button, [role='button']");
+
+      if (clickable && isVisible(clickable)) {
+        return clickable;
+      }
+    }
+
+    return null;
+  }
+
+  function getVisibleAlertText() {
+    const alerts = Array.from(document.querySelectorAll("[role='alert'], [data-testid='toast']"));
+    for (const alert of alerts) {
+      if (!isVisible(alert)) {
+        continue;
+      }
+
+      const text = normalizeSpace(alert.innerText || alert.textContent || "");
+      if (text) {
+        return text;
+      }
+    }
+
+    return "";
+  }
+
+  function clickElement(element) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    element.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      })
+    );
+    element.dispatchEvent(
+      new MouseEvent("mouseup", {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      })
+    );
+    element.click();
+  }
+
+  function focusEditable(element) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    element.focus();
+    clickElement(element);
+  }
+
+  function selectAllEditable(element) {
+    if (!(element instanceof Element)) {
+      return;
+    }
+
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    try {
+      document.execCommand("selectAll", false);
+    } catch (error) {
+      // Ignore deprecated command failures and keep the manual selection.
+    }
+  }
+
+  function composerContainsText(element, text) {
+    const value = normalizeSpace(element.innerText || element.textContent || "");
+    return value === normalizeSpace(text);
+  }
+
+  async function waitFor(resolveValue, timeoutMs, timeoutMessage) {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const value = resolveValue();
+      if (value) {
+        return value;
+      }
+
+      await sleep(50);
+    }
+
+    throw new Error(timeoutMessage || "Timed out waiting for X.");
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function showToast(message, type = "") {
+    window.clearTimeout(toastTimer);
+    ui.toast.textContent = message;
+    ui.toast.dataset.state = type;
+    ui.toast.classList.add("groktrue-toast-visible");
+
+    toastTimer = window.setTimeout(() => {
+      ui.toast.classList.remove("groktrue-toast-visible");
+    }, TOAST_TIMEOUT_MS);
+  }
+
+  function flashTarget(article) {
+    if (!article) {
+      return;
+    }
+
+    window.clearTimeout(highlightTimer);
+    document.querySelector(".groktrue-targeted-article")?.classList.remove("groktrue-targeted-article");
+    article.classList.add("groktrue-targeted-article");
+    highlightTimer = window.setTimeout(() => {
+      article.classList.remove("groktrue-targeted-article");
+    }, TARGET_FLASH_MS);
   }
 
   function installThemeObserver() {
@@ -776,7 +541,7 @@
   }
 
   function isVisible(element) {
-    if (!element) {
+    if (!(element instanceof Element)) {
       return false;
     }
 
@@ -792,44 +557,15 @@
     );
   }
 
-  function sendRuntimeMessage(message) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(message, (response) => {
-        const runtimeError = chrome.runtime.lastError;
-        if (runtimeError) {
-          reject(normalizeRuntimeError(runtimeError.message));
-          return;
-        }
-
-        resolve(response);
-      });
-    });
+  function isDisabled(element) {
+    return (
+      element.hasAttribute("disabled") ||
+      element.getAttribute("aria-disabled") === "true" ||
+      element.disabled === true
+    );
   }
 
-  function normalizeRuntimeError(message) {
-    if (typeof message === "string" && message.includes("Extension context invalidated")) {
-      scheduleContextRecovery();
-      return new Error("The extension was reloaded. Refreshing X now…");
-    }
-
-    return new Error(typeof message === "string" ? message : "Extension request failed.");
+  function normalizeSpace(value) {
+    return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   }
-
-  function scheduleContextRecovery() {
-    try {
-      const lastReloadAt = Number(window.sessionStorage.getItem(CONTEXT_RELOAD_FLAG) || "0");
-      if (Date.now() - lastReloadAt < 5000) {
-        return;
-      }
-
-      window.sessionStorage.setItem(CONTEXT_RELOAD_FLAG, String(Date.now()));
-    } catch (error) {
-      // Ignore storage access failures and still reload once.
-    }
-
-    window.setTimeout(() => {
-      window.location.reload();
-    }, 150);
-  }
-
 })();

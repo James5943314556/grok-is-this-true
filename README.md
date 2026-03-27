@@ -6,25 +6,20 @@ Chrome Manifest V3 extension for desktop X that finds the post nearest the verti
 @grok is this true?
 ```
 
-This build is meant for technical users who bring their own X Developer app and local OAuth 1.0a credentials.
+This build uses the X account already logged into your browser session. There is no API key setup and no backend.
 
 ## What It Does
 
 - shows a fixed `ASK GROK` launcher on `x.com` and `twitter.com`
 - targets the post closest to the middle of the viewport
 - sends immediately when you click the launcher
-- stores your OAuth 1.0a keys locally in Chrome storage on your machine
-- lets you replace keys or disconnect from the settings popover
+- uses X's native reply composer
+- sends as the account currently logged into X in the browser
 
 ## Requirements
 
 - desktop Chrome or Chromium
-- an X Developer app with `Read and write` access
-- your own OAuth 1.0a:
-  - Consumer Key
-  - Consumer Secret
-  - Access Token
-  - Access Token Secret
+- an active logged-in X session in the browser
 
 ## Load In Chrome
 
@@ -33,38 +28,26 @@ This build is meant for technical users who bring their own X Developer app and 
 3. Click `Load unpacked`.
 4. Select this folder.
 
-## Configure X Keys
+## Use It
 
-1. Open the extension on X.
-2. Paste your OAuth 1.0a credentials into the auth card.
-3. Click `Save Keys`.
-4. Use the gear button to replace keys later or disconnect.
+1. Open X in the same Chrome profile where the extension is loaded.
+2. Make sure you are logged in to the account you want to reply from.
+3. Scroll so the target post is near the middle of the viewport.
+4. Click `ASK GROK`.
 
-The extension does not use a backend. Secrets are not committed to the repo and are not sent anywhere except X API requests from the extension.
-
-## X Developer Setup
-
-In X Developer Console:
-
-1. Create or use an app under your project.
-2. Set app permissions to `Read and write`.
-3. Generate OAuth 1.0a consumer keys.
-4. Generate an OAuth 1.0a access token for the account you want the extension to post as.
-5. Make sure your project has active API access and credits.
+The extension clicks X's native reply button, fills `@grok is this true?`, and submits the reply through the browser session.
 
 ## Files
 
-- `manifest.json`: MV3 manifest and permissions
-- `background.js`: local OAuth 1.0a credential storage and signed `POST /2/tweets` requests
-- `content.js`: overlay UI, settings form, centered-post targeting, and send flow
-- `content.css`: launcher, settings, modal, and toast styling
+- `manifest.json`: MV3 manifest and content script wiring
+- `content.js`: overlay UI, centered-post targeting, native reply automation, and send flow
+- `content.css`: launcher and toast styling
 - `assets/button-icon.png`: launcher artwork
 - `assets/button-icon.svg`: editable source artwork
 
 ## Notes
 
 - tweet targeting depends on X's live DOM and may need updates if X changes its markup
-- this is a bring-your-own-keys tool, not a consumer login flow
-- one browser profile stores one active credential set at a time
-- you are responsible for complying with X's API terms and usage limits
+- replies are sent through X's native web UI, not the X API
+- the active browser account decides who the reply is posted as
 - validation is currently manual

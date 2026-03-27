@@ -1,17 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Grok Is This True",
-  "description": "Chrome extension for replying \"@grok is this true?\" to the centered post on X with local OAuth 1.0a keys.",
-  "version": "1.0.0",
-  "permissions": [
-    "storage"
-  ],
-  "host_permissions": [
-    "https://api.x.com/*"
-  ],
-  "background": {
-    "service_worker": "background.js"
-  },
+  "description": "Chrome extension for replying \"@grok is this true?\" to the centered post on X using your active X session.",
+  "version": "1.1.0",
   "content_scripts": [
     {
       "matches": [
