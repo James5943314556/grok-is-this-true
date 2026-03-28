@@ -1,8 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Grok Is This True",
-  "description": "Chrome extension for replying \"@grok is this true?\" to the centered post on X using your active X session.",
-  "version": "1.1.0",
+  "description": "Chrome extension for sending a Grok reply to the centered post on X using your active X session.",
+  "version": "1.2.0",
+  "permissions": [
+    "storage"
+  ],
   "content_scripts": [
     {
       "matches": [

@@ -3,6 +3,12 @@
   --groktrue-shell-fg: #020617;
   --groktrue-shell-border: rgba(255, 255, 255, 0.64);
   --groktrue-shadow: rgba(15, 23, 42, 0.34);
+  --groktrue-panel-bg: rgba(255, 255, 255, 0.98);
+  --groktrue-panel-border: rgba(148, 163, 184, 0.22);
+  --groktrue-panel-muted: #475569;
+  --groktrue-segment-bg: rgba(226, 232, 240, 0.7);
+  --groktrue-segment-active: #020617;
+  --groktrue-segment-active-text: #fff;
   position: fixed;
   inset: 0;
   z-index: 2147483647;
@@ -14,6 +20,12 @@
   --groktrue-shell-fg: #fff;
   --groktrue-shell-border: rgba(255, 255, 255, 0.14);
   --groktrue-shadow: rgba(15, 23, 42, 0.22);
+  --groktrue-panel-bg: rgba(10, 15, 27, 0.96);
+  --groktrue-panel-border: rgba(148, 163, 184, 0.18);
+  --groktrue-panel-muted: rgba(226, 232, 240, 0.78);
+  --groktrue-segment-bg: rgba(15, 23, 42, 0.88);
+  --groktrue-segment-active: #f8fafc;
+  --groktrue-segment-active-text: #020617;
 }
 
 .groktrue-root[data-theme="dark"] {
@@ -29,6 +41,19 @@
   right: 24px;
   transform: translateY(-50%);
   pointer-events: auto;
+}
+
+.groktrue-launcher {
+  position: relative;
+}
+
+.groktrue-toolbar {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .groktrue-main-button {
@@ -65,12 +90,18 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
-.groktrue-main-button:focus-visible {
+.groktrue-main-button:focus-visible,
+.groktrue-settings-toggle:focus-visible,
+.groktrue-prompt-option:focus-visible,
+.groktrue-author-action-button:focus-visible {
   outline: 3px solid #1d9bf0;
   outline-offset: 3px;
 }
 
-.groktrue-main-button:disabled {
+.groktrue-main-button:disabled,
+.groktrue-settings-toggle:disabled,
+.groktrue-prompt-option:disabled,
+.groktrue-author-action-button:disabled {
   cursor: progress;
   opacity: 0.72;
 }
@@ -106,6 +137,142 @@
   text-transform: uppercase;
 }
 
+.groktrue-settings-toggle,
+.groktrue-author-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: 2px solid var(--groktrue-shell-border);
+  border-radius: 999px;
+  background: var(--groktrue-panel-bg);
+  color: var(--groktrue-shell-fg);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.22);
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    transform 120ms ease,
+    box-shadow 160ms ease,
+    filter 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.groktrue-settings-toggle {
+  font-size: 24px;
+}
+
+.groktrue-author-action-button {
+  padding: 0;
+}
+
+.groktrue-author-action-button svg {
+  width: 24px;
+  height: 24px;
+}
+
+.groktrue-settings-toggle:hover,
+.groktrue-author-action-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.28);
+}
+
+.groktrue-settings-popover {
+  position: absolute;
+  right: calc(100% + 18px);
+  top: 50%;
+  width: min(360px, 84vw);
+  padding: 20px;
+  border: 1px solid var(--groktrue-panel-border);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  box-shadow: 0 28px 62px rgba(15, 23, 42, 0.28);
+  color: #020617;
+  opacity: 0;
+  transform: translateY(-50%) translateX(12px) scale(0.98);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+  pointer-events: none;
+}
+
+.groktrue-root[data-theme="light"] .groktrue-settings-popover {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98));
+  color: #f8fafc;
+}
+
+.groktrue-settings-open .groktrue-settings-popover {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0) scale(1);
+  pointer-events: auto;
+}
+
+.groktrue-settings-kicker {
+  margin: 0;
+}
+
+.groktrue-settings-kicker {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.groktrue-prompt-picker {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px;
+  border-radius: 22px;
+  background: var(--groktrue-segment-bg);
+}
+
+.groktrue-prompt-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 120ms ease,
+    box-shadow 160ms ease;
+}
+
+.groktrue-prompt-option:hover {
+  transform: translateY(-1px);
+}
+
+.groktrue-prompt-option-active {
+  background: var(--groktrue-segment-active);
+  color: var(--groktrue-segment-active-text);
+  box-shadow:
+    0 12px 24px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.groktrue-author-action-button {
+  color: #020617;
+}
+
+.groktrue-root[data-theme="light"] .groktrue-author-action-button {
+  color: #f8fafc;
+}
+
 .groktrue-toast {
   position: absolute;
   left: 50%;
@@ -136,6 +303,29 @@
 
 .groktrue-toast[data-state="error"] {
   background: rgba(153, 27, 27, 0.96);
+}
+
+.groktrue-toast[data-state="success"] {
+  background: linear-gradient(135deg, rgba(5, 150, 105, 0.98), rgba(22, 163, 74, 0.98));
+}
+
+.groktrue-native-success-toast-action {
+  border-radius: 999px !important;
+  background: linear-gradient(135deg, #f59e0b, #f97316) !important;
+  color: #fff !important;
+  box-shadow:
+    0 10px 22px rgba(249, 115, 22, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24) !important;
+  padding: 8px 16px !important;
+  font-weight: 800 !important;
+  transition:
+    transform 120ms ease,
+    filter 120ms ease !important;
+}
+
+.groktrue-native-success-toast-action:hover {
+  filter: brightness(1.05) saturate(1.06) !important;
+  transform: translateY(-1px);
 }
 
 .groktrue-targeted-article {
@@ -173,5 +363,29 @@
 
   .groktrue-button-copy {
     font-size: 36px;
+  }
+
+  .groktrue-toolbar {
+    top: -10px;
+    right: -10px;
+    gap: 8px;
+  }
+
+  .groktrue-settings-toggle,
+  .groktrue-author-action-button {
+    width: 48px;
+    height: 48px;
+  }
+
+  .groktrue-settings-popover {
+    right: 0;
+    top: auto;
+    bottom: calc(100% + 16px);
+    width: min(88vw, 360px);
+    transform: translateY(12px) scale(0.98);
+  }
+
+  .groktrue-settings-open .groktrue-settings-popover {
+    transform: translateY(0) scale(1);
   }
 }

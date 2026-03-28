@@ -5,16 +5,46 @@
 
   window.__grokTrueOverlayLoaded = true;
 
-  const REPLY_TEXT = "@grok is this true?";
   const ROOT_ID = "groktrue-root";
   const TOAST_TIMEOUT_MS = 3200;
   const THEME_POLL_MS = 1000;
   const TARGET_FLASH_MS = 1250;
   const COMPOSER_TIMEOUT_MS = 6000;
   const SUBMIT_TIMEOUT_MS = 6000;
+  const PROMPT_STORAGE_KEY = "groktrueSelectedPrompt";
+  const DEFAULT_PROMPT_ID = "true";
+  const PROMPT_OPTIONS = [
+    {
+      id: "true",
+      label: "Is this true?",
+      text: "@grok is this true?"
+    },
+    {
+      id: "ai",
+      label: "Is this AI?",
+      text: "@grok is this ai?"
+    },
+    {
+      id: "real",
+      label: "Is this real?",
+      text: "@grok is this real?"
+    }
+  ];
+  const AUTHOR_ACTIONS = {
+    mute: {
+      label: "Mute poster",
+      progress: "Muting poster…",
+      success: "Poster muted.",
+      alreadyMessage: "Poster is already muted.",
+      present: /^mute\b/i,
+      already: /^unmute\b/i,
+      confirm: /^mute$/i
+    }
+  };
 
   const state = {
-    theme: "dark"
+    theme: "dark",
+    selectedPromptId: DEFAULT_PROMPT_ID
   };
 
   let isSending = false;
@@ -26,27 +56,77 @@
 
   void init();
 
-  function init() {
+  async function init() {
     installThemeObserver();
+    installNativeSuccessToastObserver();
+    document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+    window.addEventListener("keydown", handleKeydown);
+    window.addEventListener("scroll", handleViewportChange, { passive: true });
+    window.addEventListener("resize", handleViewportChange);
     ui.mainButton.addEventListener("click", handleMainButton);
+    ui.settingsToggle.addEventListener("click", toggleSettings);
+    ui.promptButtons.forEach((button) => {
+      button.addEventListener("click", handlePromptOptionClick);
+    });
+    ui.authorActionButtons.forEach((button) => {
+      button.addEventListener("click", handleAuthorActionClick);
+    });
+
+    state.selectedPromptId = await readSelectedPromptId();
+    applyPromptSelectionUi();
     syncTheme();
     themeTimer = window.setInterval(syncTheme, THEME_POLL_MS);
+    decorateNativeSuccessToasts();
   }
 
   function createUi() {
     document.getElementById(ROOT_ID)?.remove();
+
+    const promptOptionsMarkup = PROMPT_OPTIONS.map(
+      (option) => `
+        <button
+          class="groktrue-prompt-option"
+          type="button"
+          data-prompt-id="${option.id}"
+          aria-pressed="false"
+        >
+          ${option.label}
+        </button>
+      `
+    ).join("");
+    const authorActionButtonsMarkup = `
+      <button class="groktrue-author-action-button" type="button" data-author-action="mute" aria-label="Mute poster" title="Mute poster">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M4 9.75h3.6l4.65-4.1a.75.75 0 0 1 1.25.56v11.58a.75.75 0 0 1-1.25.56l-4.65-4.1H4a1.75 1.75 0 0 1-1.75-1.75v-1a1.75 1.75 0 0 1 1.75-1.75Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+          <path d="M17.2 8.3 9 16.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+          <path d="M15.85 10.15a3.2 3.2 0 0 1 0 3.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+        </svg>
+      </button>
+    `;
 
     const root = document.createElement("div");
     root.id = ROOT_ID;
     root.className = "groktrue-root";
     root.innerHTML = `
       <div class="groktrue-dock">
-        <button class="groktrue-main-button" type="button" aria-label="Reply with Grok">
-          <span class="groktrue-icon-frame">
-            <img class="groktrue-icon" src="${chrome.runtime.getURL("assets/button-icon.png")}" alt="" />
-          </span>
-          <span class="groktrue-button-copy">ASK GROK</span>
-        </button>
+        <div class="groktrue-launcher">
+          <button class="groktrue-main-button" type="button" aria-label="Reply with Grok">
+            <span class="groktrue-icon-frame">
+              <img class="groktrue-icon" src="${chrome.runtime.getURL("assets/button-icon.png")}" alt="" />
+            </span>
+            <span class="groktrue-button-copy">ASK GROK</span>
+          </button>
+          <div class="groktrue-toolbar">
+            ${authorActionButtonsMarkup}
+            <button class="groktrue-settings-toggle" type="button" aria-label="Open settings" title="Settings">⚙</button>
+          </div>
+          <div class="groktrue-settings-popover" aria-hidden="true">
+            <p class="groktrue-settings-kicker">Reply Prompt</p>
+            <div class="groktrue-prompt-picker" role="group" aria-label="Reply prompt options">
+              ${promptOptionsMarkup}
+            </div>
+          </div>
+        </div>
       </div>
       <div class="groktrue-toast" aria-live="polite"></div>
     `;
@@ -56,6 +136,10 @@
     return {
       root,
       mainButton: root.querySelector(".groktrue-main-button"),
+      settingsToggle: root.querySelector(".groktrue-settings-toggle"),
+      settingsPopover: root.querySelector(".groktrue-settings-popover"),
+      promptButtons: Array.from(root.querySelectorAll(".groktrue-prompt-option")),
+      authorActionButtons: Array.from(root.querySelectorAll(".groktrue-author-action-button")),
       toast: root.querySelector(".groktrue-toast")
     };
   }
@@ -74,13 +158,14 @@
       return;
     }
 
+    closeSettings();
     flashTarget(context.article);
     setBusy(true);
-    showToast("Replying…");
+    showToast(`Replying with ${getSelectedPromptText()}`);
 
     try {
       await sendReplyViaNativeUi(context);
-      showToast("Reply sent.");
+      showToast("Reply sent.", "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Reply failed.", "error");
     } finally {
@@ -88,10 +173,126 @@
     }
   }
 
+  function handlePromptOptionClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const button = event.currentTarget;
+    if (!(button instanceof HTMLElement)) {
+      return;
+    }
+
+    const nextPromptId = normalizePromptId(button.dataset.promptId);
+    if (nextPromptId === state.selectedPromptId) {
+      return;
+    }
+
+    state.selectedPromptId = nextPromptId;
+    applyPromptSelectionUi();
+    void persistSelectedPromptId(nextPromptId);
+    showToast(`Selected ${getSelectedPromptLabel()}`, "success");
+  }
+
+  async function handleAuthorActionClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const button = event.currentTarget;
+    if (!(button instanceof HTMLElement) || isSending) {
+      return;
+    }
+
+    const actionType = button.dataset.authorAction;
+    if (!isAuthorActionType(actionType)) {
+      return;
+    }
+
+    const context = getCenteredTweetContext();
+    if (!context) {
+      showToast("No target post is available right now.", "error");
+      return;
+    }
+
+    closeSettings();
+    flashTarget(context.article);
+    setBusy(true);
+    showToast(AUTHOR_ACTIONS[actionType].progress);
+
+    try {
+      await performAuthorAction(context, actionType);
+      showToast(AUTHOR_ACTIONS[actionType].success, "success");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : `${AUTHOR_ACTIONS[actionType].label} failed.`,
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleSettings(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isSending) {
+      return;
+    }
+
+    ui.root.classList.toggle("groktrue-settings-open");
+    ui.settingsPopover.setAttribute(
+      "aria-hidden",
+      String(!ui.root.classList.contains("groktrue-settings-open"))
+    );
+  }
+
+  function closeSettings() {
+    ui.root.classList.remove("groktrue-settings-open");
+    ui.settingsPopover.setAttribute("aria-hidden", "true");
+  }
+
+  function handleDocumentPointerDown(event) {
+    if (!ui.root.classList.contains("groktrue-settings-open")) {
+      return;
+    }
+
+    const insideLauncher = event.target instanceof Element && event.target.closest(".groktrue-launcher");
+    if (!insideLauncher) {
+      closeSettings();
+    }
+  }
+
+  function handleKeydown(event) {
+    if (event.key === "Escape" && ui.root.classList.contains("groktrue-settings-open")) {
+      closeSettings();
+    }
+  }
+
+  function handleViewportChange() {
+    if (ui.root.classList.contains("groktrue-settings-open")) {
+      closeSettings();
+    }
+  }
+
   function setBusy(nextBusy) {
     isSending = nextBusy;
     ui.root.classList.toggle("groktrue-busy", nextBusy);
     ui.mainButton.disabled = nextBusy;
+    ui.settingsToggle.disabled = nextBusy;
+    ui.promptButtons.forEach((button) => {
+      button.disabled = nextBusy;
+    });
+    ui.authorActionButtons.forEach((button) => {
+      button.disabled = nextBusy;
+    });
+  }
+
+  function applyPromptSelectionUi() {
+    ui.promptButtons.forEach((button) => {
+      const isSelected = button.dataset.promptId === state.selectedPromptId;
+      button.classList.toggle("groktrue-prompt-option-active", isSelected);
+      button.setAttribute("aria-pressed", String(isSelected));
+    });
   }
 
   async function sendReplyViaNativeUi(context) {
@@ -105,8 +306,9 @@
 
     const composer = await waitForReplyComposer(previousContainers);
     const textbox = composer.textbox;
+    const selectedPromptText = getSelectedPromptText();
 
-    const inserted = await replaceComposerText(textbox, REPLY_TEXT);
+    const inserted = await replaceComposerText(textbox, selectedPromptText);
     if (!inserted) {
       throw new Error("Could not fill X's reply box.");
     }
@@ -114,6 +316,35 @@
     const readySubmitButton = await waitForEnabledSubmitButton(composer.container);
     clickElement(readySubmitButton);
     await waitForSubmitResult(composer.container, textbox);
+  }
+
+  async function performAuthorAction(context, actionType) {
+    const actionConfig = AUTHOR_ACTIONS[actionType];
+    const menuButton = findArticleMenuButton(context.article);
+    if (!menuButton) {
+      throw new Error("Could not find the post menu for that author.");
+    }
+
+    clickElement(menuButton);
+    const menu = await waitForVisibleMenu();
+    const actionMatch = findAuthorActionMenuItem(menu, actionType);
+
+    if (actionMatch.state === "already") {
+      throw new Error(actionConfig.alreadyMessage);
+    }
+
+    if (!actionMatch.element) {
+      throw new Error(`Could not find X's ${actionConfig.label.toLowerCase()} action.`);
+    }
+
+    clickElement(actionMatch.element);
+
+    const confirmButton = await findOptionalConfirmButton(actionType);
+    if (confirmButton instanceof HTMLElement) {
+      await activateConfirmationButton(confirmButton, actionType);
+    }
+
+    await waitForAuthorActionResult(actionType);
   }
 
   async function waitForReplyComposer(previousContainers) {
@@ -181,9 +412,13 @@
     await sleep(250);
 
     await waitFor(() => {
-      const alertText = getVisibleAlertText();
-      if (alertText) {
-        throw new Error(alertText);
+      const alertState = getVisibleAlertState();
+      if (alertState.type === "success") {
+        return true;
+      }
+
+      if (alertState.type === "error" && alertState.text) {
+        throw new Error(alertState.text);
       }
 
       if (!document.contains(container) || !document.contains(textbox)) {
@@ -201,6 +436,31 @@
 
       return null;
     }, SUBMIT_TIMEOUT_MS, "X did not finish sending the reply.");
+  }
+
+  async function waitForAuthorActionResult(actionType) {
+    await sleep(250);
+
+    await waitFor(() => {
+      const alertState = getVisibleAlertState();
+      if (alertState.type === "success") {
+        return true;
+      }
+
+      if (alertState.type === "error" && alertState.text) {
+        throw new Error(alertState.text);
+      }
+
+      const openMenu = Array.from(document.querySelectorAll("[role='menu'], [data-testid='Dropdown']")).find((menu) =>
+        isVisible(menu)
+      );
+      const confirmButton = findConfirmationButton(AUTHOR_ACTIONS[actionType].confirm);
+      if (!openMenu && !confirmButton) {
+        return true;
+      }
+
+      return null;
+    }, SUBMIT_TIMEOUT_MS, `${AUTHOR_ACTIONS[actionType].label} did not finish in time.`);
   }
 
   function getCenteredTweetContext() {
@@ -293,6 +553,12 @@
     return match ? match[1] : "";
   }
 
+  function findArticleMenuButton(article) {
+    return article.querySelector(
+      "[data-testid='caret'], button[aria-label='More'], [role='button'][aria-label='More']"
+    );
+  }
+
   function findReplyButton(article) {
     return article.querySelector("[data-testid='reply']");
   }
@@ -367,7 +633,172 @@
     return null;
   }
 
-  function getVisibleAlertText() {
+  async function waitForVisibleMenu() {
+    return waitFor(() => {
+      const menus = Array.from(document.querySelectorAll("[role='menu'], [data-testid='Dropdown']"));
+      return menus.find((menu) => isVisible(menu)) || null;
+    }, COMPOSER_TIMEOUT_MS / 2, "X did not open the post menu in time.");
+  }
+
+  function findAuthorActionMenuItem(menu, actionType) {
+    const config = AUTHOR_ACTIONS[actionType];
+    const candidates = Array.from(menu.querySelectorAll("[role='menuitem'], button, a, [role='button']"));
+    let alreadyPresent = false;
+
+    for (const node of candidates) {
+      if (!(node instanceof HTMLElement) || !isVisible(node)) {
+        continue;
+      }
+
+      const text = normalizeSpace(node.innerText || node.textContent || "");
+      if (!text) {
+        continue;
+      }
+
+      if (config.already.test(text)) {
+        alreadyPresent = true;
+      }
+
+      if (config.present.test(text) && !config.already.test(text)) {
+        const clickable = getClickableElement(node);
+        return {
+          state: "ready",
+          element: clickable || node
+        };
+      }
+    }
+
+    return {
+      state: alreadyPresent ? "already" : "missing",
+      element: null
+    };
+  }
+
+  async function findOptionalConfirmButton(actionType) {
+    const confirmPattern = AUTHOR_ACTIONS[actionType].confirm;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < 1400) {
+      const confirmButton = findConfirmationButton(confirmPattern);
+      if (confirmButton) {
+        return confirmButton;
+      }
+
+      await sleep(50);
+    }
+
+    return null;
+  }
+
+  async function activateConfirmationButton(button, actionType) {
+    const confirmPattern = AUTHOR_ACTIONS[actionType].confirm;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const liveButton = findConfirmationButton(confirmPattern) || button;
+      if (!(liveButton instanceof HTMLElement)) {
+        return;
+      }
+
+      liveButton.focus();
+      clickElement(liveButton);
+      await sleep(160);
+
+      if (!findConfirmationButton(confirmPattern)) {
+        return;
+      }
+
+      liveButton.focus();
+      pressElementWithKeyboard(liveButton, "Enter");
+      await sleep(160);
+
+      if (!findConfirmationButton(confirmPattern)) {
+        return;
+      }
+
+      liveButton.focus();
+      pressElementWithKeyboard(liveButton, " ");
+      await sleep(160);
+
+      if (!findConfirmationButton(confirmPattern)) {
+        return;
+      }
+    }
+
+    throw new Error(`Could not confirm ${AUTHOR_ACTIONS[actionType].label.toLowerCase()}.`);
+  }
+
+  function findConfirmationButton(pattern) {
+    const dialogs = Array.from(document.querySelectorAll("[role='dialog']"));
+
+    for (const dialog of dialogs) {
+      if (!isVisible(dialog)) {
+        continue;
+      }
+
+      const confirmByTestId = dialog.querySelector("[data-testid='confirmationSheetConfirm']");
+      if (confirmByTestId instanceof Element && isVisible(confirmByTestId)) {
+        const clickable = getClickableElement(confirmByTestId);
+        if (clickable instanceof HTMLElement && isVisible(clickable) && !isDisabled(clickable)) {
+          return clickable;
+        }
+      }
+
+      const candidates = Array.from(dialog.querySelectorAll("button, [role='button']"));
+      for (const candidate of candidates) {
+        if (!(candidate instanceof HTMLElement) || !isVisible(candidate)) {
+          continue;
+        }
+
+        const text = normalizeSpace(candidate.innerText || candidate.textContent || "");
+        if (pattern.test(text) && !isDisabled(candidate)) {
+          return candidate;
+        }
+      }
+    }
+
+    return null;
+  }
+  function getClickableElement(node) {
+    if (!(node instanceof Element)) {
+      return null;
+    }
+
+    const closestClickable = node.closest("button, [role='button']");
+    if (closestClickable) {
+      return closestClickable;
+    }
+
+    if (node.matches("button, [role='button']")) {
+      return node;
+    }
+
+    return node.querySelector("button, [role='button']");
+  }
+
+  function resolveInteractiveTarget(element) {
+    if (!(element instanceof HTMLElement)) {
+      return null;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(clientX, clientY);
+    const hitClickable = getClickableElement(hit);
+
+    if (hitClickable instanceof HTMLElement && isVisible(hitClickable)) {
+      return hitClickable;
+    }
+
+    const directClickable = getClickableElement(element);
+    if (directClickable instanceof HTMLElement && isVisible(directClickable)) {
+      return directClickable;
+    }
+
+    return element;
+  }
+
+  function getVisibleAlertState() {
     const alerts = Array.from(document.querySelectorAll("[role='alert'], [data-testid='toast']"));
     for (const alert of alerts) {
       if (!isVisible(alert)) {
@@ -376,11 +807,60 @@
 
       const text = normalizeSpace(alert.innerText || alert.textContent || "");
       if (text) {
-        return text;
+        if (isSuccessToastText(text)) {
+          return {
+            type: "success",
+            text
+          };
+        }
+
+        return {
+          type: "error",
+          text
+        };
       }
     }
 
-    return "";
+    return {
+      type: "",
+      text: ""
+    };
+  }
+
+  function installNativeSuccessToastObserver() {
+    const observer = new MutationObserver(() => {
+      decorateNativeSuccessToasts();
+    });
+
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  }
+
+  function decorateNativeSuccessToasts() {
+    const alerts = document.querySelectorAll("[role='alert'], [data-testid='toast']");
+    for (const alert of alerts) {
+      if (!(alert instanceof HTMLElement)) {
+        continue;
+      }
+
+      const text = normalizeSpace(alert.innerText || alert.textContent || "");
+      const isSuccessToast = isSuccessToastText(text);
+      alert.classList.toggle("groktrue-native-success-toast", isSuccessToast);
+
+      const actionNodes = alert.querySelectorAll("a, button, [role='button']");
+      for (const actionNode of actionNodes) {
+        if (!(actionNode instanceof HTMLElement)) {
+          continue;
+        }
+
+        const actionText = normalizeSpace(actionNode.innerText || actionNode.textContent || "");
+        const isViewAction = isSuccessToast && /^(view|open)$/i.test(actionText);
+        actionNode.classList.toggle("groktrue-native-success-toast-action", isViewAction);
+      }
+    }
   }
 
   function clickElement(element) {
@@ -388,21 +868,158 @@
       return;
     }
 
-    element.dispatchEvent(
+    const target = resolveInteractiveTarget(element);
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const rect = target.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
+
+    target.focus();
+
+    if (typeof PointerEvent === "function") {
+      target.dispatchEvent(
+        new PointerEvent("pointerover", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          clientX,
+          clientY
+        })
+      );
+      target.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          clientX,
+          clientY
+        })
+      );
+      target.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          clientX,
+          clientY,
+          button: 0,
+          buttons: 1
+        })
+      );
+      target.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          clientX,
+          clientY,
+          button: 0,
+          buttons: 0
+        })
+      );
+    }
+
+    target.dispatchEvent(
+      new MouseEvent("mouseover", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        clientX,
+        clientY
+      })
+    );
+    target.dispatchEvent(
+      new MouseEvent("mousemove", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        clientX,
+        clientY
+      })
+    );
+    target.dispatchEvent(
       new MouseEvent("mousedown", {
         bubbles: true,
         cancelable: true,
-        view: window
+        composed: true,
+        view: window,
+        clientX,
+        clientY,
+        button: 0,
+        buttons: 1,
+        detail: 1
       })
     );
-    element.dispatchEvent(
+    target.dispatchEvent(
       new MouseEvent("mouseup", {
         bubbles: true,
         cancelable: true,
-        view: window
+        composed: true,
+        view: window,
+        clientX,
+        clientY,
+        button: 0,
+        buttons: 0,
+        detail: 1
       })
     );
-    element.click();
+    target.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        clientX,
+        clientY,
+        button: 0,
+        buttons: 0,
+        detail: 1
+      })
+    );
+    target.click();
+  }
+
+  function pressElementWithKeyboard(element, key) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    const normalizedKey = key === " " ? " " : key;
+    const normalizedCode = key === " " ? "Space" : key;
+
+    element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: normalizedKey,
+        code: normalizedCode,
+        bubbles: true,
+        cancelable: true
+      })
+    );
+    element.dispatchEvent(
+      new KeyboardEvent("keyup", {
+        key: normalizedKey,
+        code: normalizedCode,
+        bubbles: true,
+        cancelable: true
+      })
+    );
   }
 
   function focusEditable(element) {
@@ -565,7 +1182,58 @@
     );
   }
 
+  async function readSelectedPromptId() {
+    try {
+      if (!chrome?.storage?.local) {
+        return DEFAULT_PROMPT_ID;
+      }
+
+      const result = await chrome.storage.local.get(PROMPT_STORAGE_KEY);
+      return normalizePromptId(result?.[PROMPT_STORAGE_KEY]);
+    } catch (error) {
+      return DEFAULT_PROMPT_ID;
+    }
+  }
+
+  async function persistSelectedPromptId(promptId) {
+    try {
+      if (!chrome?.storage?.local) {
+        return;
+      }
+
+      await chrome.storage.local.set({
+        [PROMPT_STORAGE_KEY]: normalizePromptId(promptId)
+      });
+    } catch (error) {
+      // Ignore storage failures and keep the in-memory selection.
+    }
+  }
+
+  function getSelectedPrompt() {
+    return PROMPT_OPTIONS.find((option) => option.id === state.selectedPromptId) || PROMPT_OPTIONS[0];
+  }
+
+  function getSelectedPromptText() {
+    return getSelectedPrompt().text;
+  }
+
+  function getSelectedPromptLabel() {
+    return getSelectedPrompt().label;
+  }
+
+  function normalizePromptId(value) {
+    return PROMPT_OPTIONS.some((option) => option.id === value) ? value : DEFAULT_PROMPT_ID;
+  }
+
+  function isAuthorActionType(value) {
+    return value === "mute";
+  }
+
   function normalizeSpace(value) {
     return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  }
+
+  function isSuccessToastText(text) {
+    return /^(your (post|reply) was sent|muted\b)/i.test(text);
   }
 })();
